@@ -1,0 +1,19 @@
+Package: GenSynthPop
+Type: Package
+Title: Functions For Generating a Representative Synthetic Agent Population Based On Marginal And Conditional Distributions
+Version: 0.1.0
+Authors@R: 
+    person("Tabea", "Sonnenschein", , "t.s.sonnenschein@uu.nl", role = c("aut", "cre"),
+           comment = c(ORCID = "0000-0001-6592-9548"))
+Maintainer: Tabea Sonnenschein <t.s.sonnenschein@uu.nl>
+Description: This package contains a set of functions that help prepare stratified census datasets to generate conditional propensities, 
+  combines the conditional propensities with spatial marginal distributions to generate a representative population 
+  and validates that the produced agents have a similar distribution as the initial spatial marginal datasets and the stratified datasets. 
+  The generated population is  representative for a city or the spatial extent that is fed into the algorithms and can be used for simulation purposes, 
+  such as an agent-based model. The smaller the spatial units of the spatial marginal distributions, 
+  the more spatially resolved the agents will be too.
+License: use_mit_license()
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.2.0
+Roxygen: list(markdown = TRUE)

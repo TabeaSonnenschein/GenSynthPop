@@ -1,0 +1,36 @@
+?calc_propens_agents
+?crosstabular_to_singleside_df
+?crossvalid #
+?distr_attr_cond_prop
+?distr_attr_strat_n_neigh_stats_3plus
+?distr_bin_attr_strat_n_neigh_stats
+?gen_agent_df
+?restructure_one_var_marginal
+?strat_prop_from_sep_cond_var #want to add that it is joined to agent_df
+?distr_agent_neigh_age_group
+
+
+install.packages("devtools")
+library(roxygen2)
+
+# some example mock data
+# stratified dataframe
+age_group = rep(c("A1", "A2", "A3", "A4"), 6)
+sex = c("male","male","male","male", "female","female","female","female", "non-binary", "non-binary", "non-binary","non-binary")
+
+?rep
+rep(c("male", "female", "non-binary"), each = 4)
+employed = sample(1:400,length(age_group))
+unemployed = sample(1:400,length(age_group))
+total_pop = employed + unemployed
+stratified_df = data.frame(age_group, sex , employed, unemployed, total_pop)
+
+# agent dataframe
+agent_df = as.data.frame(paste("Agent_",1:500, sep=""))
+agent_df$age_group = age_group[sample(1:length(age_group), size = nrow(agent_df), replace = T)]
+agent_df$sex = sex[sample(1:length(age_group), size = nrow(agent_df), replace = T)]
+colnames(agent_df) = c("agent_id",  "age_group", "sex" )
+
+# function application
+agent_df = calc_propens_agents(stratified_df, "employed", "total_pop", agent_df, c("age_group", "sex"))
+print(agent_df$prop_employed)

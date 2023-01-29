@@ -1,0 +1,4 @@
+install.packages("devtools")
+library(devtools)
+install_github("TabeaSonnenschein/Spatial-Agent-based-Modeling-of-Urban-Health-Interventions/GenSynthPop")
+library(GenSynthPop)
