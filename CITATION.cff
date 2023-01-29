@@ -4,6 +4,6 @@ authors:
   - family-names: Sonnenschein
     given-names: Tabea
     orcid: https://orcid.org/0000-0001-6592-9548
-title: TabeaSonnenschein/GenSynthPop: R-package GenSynthPop: Generate Representative Spatially Explicit Synthetic Populations
+title: GenSynthPop: R-package GenSynthPop: Generate Representative Spatially Explicit Synthetic Populations
 version: v1.0.0
 date-released: 2023-01-29
