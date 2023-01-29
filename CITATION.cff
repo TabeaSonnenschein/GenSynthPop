@@ -1,0 +1,9 @@
+cff-version: 1.1.0
+message: "If you use this software, please cite it as below."
+authors:
+  - family-names: Sonnenschein
+    given-names: Tabea
+    orcid: https://orcid.org/0000-0001-6592-9548
+title: TabeaSonnenschein/GenSynthPop: R-package GenSynthPop: Generate Representative Spatially Explicit Synthetic Populations
+version: v1.0.0
+date-released: 2023-01-29
