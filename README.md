@@ -121,7 +121,7 @@ print(head(agent_df))
 ```
 
 
-## you can look at the Example_Application_GenSynthPop.R script for an example application of the functions in the package.
+### you can look at the Example_Application_GenSynthPop.R script for an example application of the functions in the package.
 
 ## License
 This package is licensed under the MIT License.
