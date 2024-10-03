@@ -1,7 +1,0 @@
-ggplot(data = st_as_sf(CarStreets)) +
-  geom_sf(aes(fill = CarStreets$daglv), size= 0.01)+
-  scale_fill_viridis_c(option = "D")
-
-ggplot(data = st_as_sf(CarStreets)) +
-  geom_sf(aes(fill = CarStreets$avondlv), size= 0.01)+
-  scale_fill_viridis_c(option = "D")
