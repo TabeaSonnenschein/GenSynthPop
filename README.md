@@ -1,5 +1,4 @@
 ## **Instructions for R-package: GenSynthPop**
-#### *Author: Tabea Sonnenschein, Utrecht University*
 
 This repository contains the implementation of GenSynthPop, a sample-free tool to construct Synthetic Populations from mixed-aggregation contingency tables. 
 
@@ -11,14 +10,12 @@ Changes in Version 2.0.0 of the package GenSynthPop compared to Version 1.0.0
 * implements deterministic assignment, instead of probability distribution sampling
 * fuses all steps into a single function, for ease of use
 
-
+## Publication(s)
 The work in this repository is described in:
  de Mooij, J., Sonnenschein, T., Pellegrino, M. et al. GenSynthPop: generating a spatially explicit synthetic population of individuals and households from aggregated data. Auton Agent Multi-Agent Syst 38, 48 (2024).
 [https://doi.org/10.1007/s10458-024-09680-7](https://doi.org/10.1007/s10458-024-09680-7)
 
 An Python implementation of this library is available [here](https://doi.org/10.5281/zenodo.11474109)
-
-A reference implementation is available [here]()
 
 
 ### Main Function
