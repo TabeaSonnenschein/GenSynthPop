@@ -64,7 +64,7 @@ agent_df = data.frame(agent_id = unlist(agent_ids),
                                        neighb_code = unlist(agent_neighborhoods))
 ```
 
-3. use this new agent_df and the neighborhood marginal distribution dataframe to distribute the agents across neighborhoods and age groups.
+3. use this new agent_df and the neighborhood marginal distribution dataframe to distribute the agents across neighborhoods and age groups. 
 
 ```r
 agecols = c("0-15", "15-25", "25-45", "45-65", "65+")
@@ -84,12 +84,14 @@ print(head(agent_df))
 
 ```
 
-4. Read the stratified dataframe with the conditional variable and the variable of interest (that you want to add), for example sex by agegroup, since we already added that one. Make sure that the classes of the conditional variables correspond to the ones in the agent_df. We can now use additional neighborhood margins that we have 
+4. Read the stratified dataframe with the conditional variable and the variable of interest (that you want to add), for example sex by agegroup, since we already added that one. Make sure that the classes of the conditional variables correspond to the ones in the agent_df. We can now use additional neighborhood margins that we have. The statement "variable does not statistically match the original distribution" can be ignored and only is the case because distributions have been adjusted to the local neighborhood margins and therefore do not equal the unadjusted distributions.
 
 ```r
 sex_age_df = read.csv("sex_age_statistics.csv") # columns age_group, sex, counts
 
-sexneigh_df <- sexneigh_df[unlist(c("neighb_code", sexcols))] %>%
+sexcols = c("male", "female")
+
+sexneigh_df <- neigh_df[unlist(c("neighb_code", sexcols))] %>%
   pivot_longer(cols = all_of(sexcols), 
                names_to = "sex", 
                values_to = "count")  
@@ -103,21 +105,36 @@ agent_df = Conditional_attribute_adder(df = agent_df,
                             margins= list(ageneigh_df, sexneigh_df),
                             margins_names= c("age_group", "sex"))
 print(head(agent_df))
+
 ```
 
-5. Now we can add multi-variable contingency tables and repeat the function for any data and variables we would like to add. For example let us add education level based on age and sex. We can now use the neighborhood margins for age_group, sex, or even as well for education_level. The function can take contingency tables with any number of variables and any number of neighborhood marginal data. The only requirement is that the conditional variables of the contingency table and marginal data are represented in the agent_df. So all variables apart from the target attribute. The algorithm can deal with cases when no neighborhood marginal data is available for some conditional variables or target attributes.
+I would recommend adding the integer age based on sex and age_group statistics without neighborhood margins. This allows regrouping age into the needed age group categorizations (determined by the data) for subsequent variables.
+
+
+5. Now we can add multi-variable contingency tables and repeat the function for any data and variables we would like to add. For example let us add education level based on age and sex. We can now use the neighborhood margins for age_group, sex, or even as well for education_level. The function can take contingency tables with any number of variables and any number of neighborhood marginal data. The only requirement is that the conditional variables of the contingency table and marginal data are represented in the agent_df. So all variables apart from the target attribute. The algorithm can deal with cases when no neighborhood marginal data is available for some conditional variables or target attributes. 
 
 ```r
 edu_age_sex_df = read.csv("edu_sex_age_statistics.csv") # columns age_group, sex, education_level counts
 
+educols = c("high", "middle", "low")
+
+eduneigh_df <- neigh_df[unlist(c("neighb_code", educols))] %>%
+  pivot_longer(cols = all_of(educols), 
+               names_to = "sex", 
+               values_to = "count")  
+eduneigh_df <- as.data.frame(eduneigh_df)
+eduneigh_df <- eduneigh_df[!is.na(eduneigh_df$count), ]
 
 agent_df = Conditional_attribute_adder(df = agent_df, 
                             df_contingency = edu_age_sex_df , 
                             target_attribute = "education_level", 
                             group_by = c("neighb_code"),
-                            margins= list(ageneigh_df, sexneigh_df),
-                            margins_names= c("age_group", "sex"))
+                            margins= list(ageneigh_df, sexneigh_df, eduneigh_df),
+                            margins_names= c("age_group", "sex", "education_level"))
 print(head(agent_df))
+
+# but it also works without the eduneigh_df
+
 ```
 
 
