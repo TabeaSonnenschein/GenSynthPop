@@ -1,0 +1,11 @@
+sex,age_group,count
+male,age0_15,1396714
+male,age15_25,1091893
+male,age25_45,2169884
+male,age45_65,2417586
+male,age65plus,1571954
+female,age0_15,1329385
+female,age15_25,1051850
+female,age25_45,2139020
+female,age45_65,2522985
+female,age65plus,1820601
