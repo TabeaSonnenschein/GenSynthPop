@@ -123,7 +123,8 @@ eduneigh_df <- neigh_df[unlist(c("neighb_code", educols))] %>%
                names_to = "sex", 
                values_to = "count")  
 eduneigh_df <- as.data.frame(eduneigh_df)
-eduneigh_df <- eduneigh_df[!is.na(eduneigh_df$count), ]
+neighwithmissingdata = unique(eduneigh_df$neighb_code[is.na(eduneigh_df$count)])
+eduneigh_df = eduneigh_df[!eduneigh_df$neighb_code %in% neighwithmissingdata, ]
 
 agent_df = Conditional_attribute_adder(df = agent_df, 
                             df_contingency = edu_age_sex_df , 
