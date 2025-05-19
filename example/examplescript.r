@@ -6,7 +6,7 @@ library(dplyr)
 
 ?Conditional_attribute_adder 
 
-setwd("D:/PhD EXPANSE/Data/Amsterdam/Population/CBS statistics/GenSynthPopExampledata")
+setwd("C:/Users/6513301/OneDrive - Universiteit Utrecht/Documents/GitHub/GenSynthPop/example")
 
 # Load the library
 neigh_df = read.csv("Neighborhood_statistics.csv")
