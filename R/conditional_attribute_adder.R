@@ -1,5 +1,110 @@
 library(dplyr)
 
+# Compare the datasets the attribute is built from before fitting anything, so that a
+# mismatch between them is reported as a data problem rather than surfacing later as an
+# unexplained IPF non-convergence or a large divergence in the verification step.
+#
+# The usual cause is that the sources describe different populations: a national or
+# regional contingency table alongside local aggregates for the spatial units, published
+# for a different reference year, a different age range, or a subpopulation (education
+# levels, for instance, are commonly tabulated only for adults). IPF can rescale totals,
+# but it cannot reconcile sources whose composition genuinely disagrees.
+check_data_alignment <- function(df, df_contingency, margins, margins_names, group_by,
+                                target_attribute) {
+    notes <- character(0)
+    # Agents the contingency table can actually speak about: those whose categories all
+    # appear in it. A table covering a subpopulation is compared against that
+    # subpopulation, not against the whole synthetic population, so that deliberately
+    # partial coverage is not reported as a much larger shortfall than it is.
+    # The target attribute is excluded: df holds it as all-NA at this point, so
+    # including it would mark every agent as uncovered.
+    conditioning <- setdiff(intersect(colnames(df), colnames(df_contingency)),
+                            c("count", target_attribute))
+    covered <- rep(TRUE, nrow(df))
+    for (column in conditioning) {
+        covered <- covered & as.character(df[[column]]) %in%
+            as.character(df_contingency[[column]])
+    }
+    n_agents <- sum(covered)
+    if (n_agents == 0) n_agents <- nrow(df)
+
+    for (index in seq_along(margins)) {
+        margin_df <- margins[[index]]
+        margin_name <- margins_names[[index]]
+        if (!"count" %in% colnames(margin_df)) next
+
+        n_missing <- sum(is.na(margin_df$count))
+        if (n_missing > 0) {
+            where <- if (length(group_by) > 0 && group_by[1] %in% colnames(margin_df)) {
+                paste0(" across ",
+                       length(unique(margin_df[[group_by[1]]][is.na(margin_df$count)])),
+                       " spatial unit(s)")
+            } else ""
+            notes <- c(notes, paste0("margin '", margin_name, "' has ", n_missing,
+                " missing count(s)", where, "; those units cannot be fitted to it"))
+        }
+
+        # Counted over the levels the contingency table shares with the margin, which is
+        # what the fitting itself uses. A margin that merely reaches wider than a
+        # subpopulation table - neighbourhood ages against a 15-and-over contingency - is
+        # trimmed to those levels during fitting and is not a mismatch.
+        in_scope <- if (margin_name %in% colnames(df_contingency)) {
+            as.character(margin_df[[margin_name]]) %in%
+                as.character(df_contingency[[margin_name]])
+        } else rep(TRUE, nrow(margin_df))
+        margin_total <- sum(margin_df$count[in_scope], na.rm = TRUE)
+        coverage <- margin_total / n_agents
+        # 5%: census margins routinely differ by a percent or two through disclosure
+        # rounding, so only a clearly different population is worth reporting.
+        if (is.finite(coverage) && abs(coverage - 1) > 0.05) {
+            notes <- c(notes, paste0("margin '", margin_name, "' totals ", round(margin_total),
+                " against ", n_agents, " agents the contingency table covers (",
+                round(100 * coverage, 1), "%), so it describes a different population"))
+        }
+
+        # Composition, not just totals: a source table whose category mix differs from the
+        # local aggregates cannot be reproduced jointly, however it is scaled.
+        if (margin_name %in% colnames(df_contingency)) {
+            contingency_share <- tapply(df_contingency$count, df_contingency[[margin_name]], sum)
+            margin_share <- tapply(margin_df$count, margin_df[[margin_name]], function(x) sum(x, na.rm = TRUE))
+            shared <- intersect(names(contingency_share), names(margin_share))
+            if (length(shared) > 1) {
+                p <- contingency_share[shared] / sum(contingency_share[shared])
+                q <- margin_share[shared] / sum(margin_share[shared])
+                composition_tvd <- 0.5 * sum(abs(p - q))
+                if (is.finite(composition_tvd) && composition_tvd > 0.05) {
+                    notes <- c(notes, paste0("the contingency table and margin '", margin_name,
+                        "' disagree about the composition of '", margin_name, "' by ",
+                        round(100 * composition_tvd, 1), "%"))
+                }
+            }
+        }
+
+        missing_levels <- setdiff(unique(as.character(margin_df[[margin_name]])),
+                                  unique(as.character(df_contingency[[margin_name]])))
+        if (margin_name %in% colnames(df_contingency) && length(missing_levels) > 0) {
+            notes <- c(notes, paste0("margin '", margin_name, "' has categor(ies) ",
+                paste(sQuote(missing_levels), collapse = ", "),
+                " that the contingency table has no cell for; they are excluded from the ",
+                "fit. That is intended when the contingency table deliberately covers a ",
+                "subpopulation, and a spelling mismatch otherwise. Agents in those ",
+                "categories are left NA and can be assigned separately"))
+        }
+    }
+
+    if (length(notes) > 0) {
+        warning(paste0("The underlying datasets may not align:\n  - ",
+            paste(notes, collapse = "\n  - "),
+            "\nThis typically means national or regional aggregates do not match up with ",
+            "the local ones - a different reference year, age range or subpopulation. IPF ",
+            "will still rescale each spatial unit to its own margins, and the conditional ",
+            "propensities are preserved, but the joint distribution of the result cannot ",
+            "reproduce sources that disagree with each other. Check the verification ",
+            "output below before using the population."), call. = FALSE)
+    }
+    invisible(notes)
+}
+
 #' Add a Target Attribute to a Synthetic Population Using Contingency Table Fitting
 #'
 #' This function adds a target attribute to a synthetic population by fitting it to an input contingency table.
@@ -121,6 +226,10 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
         marginorder <-lapply(margins_names, function(col_name) {
             unique(df_contingency[[col_name]])
         })
+        # Reported up front, so that a mismatch between the sources is recognisable as a
+        # data problem rather than appearing later as an unexplained fitting failure.
+        check_data_alignment(df, df_contingency, margins, margins_names, group_by,
+                             target_attribute)
     } else {
         print("no margins provided: using only supplied contigency table")
         margins_group <- group_by
@@ -166,15 +275,26 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
     # Main loop over the group-by attributes. Iterating over unique *combinations*
     # keeps a multi-column group_by working, as documented: df[[group_by]] would be
     # recursive indexing (df[["a"]][["b"]]) and fails for more than one column.
+    # IPF reports non-convergence once per spatial unit it cannot fit. Collected here and
+    # reported once, with the likely cause, instead of as hundreds of separate warnings.
+    unconverged_groups <- character(0)
+
     uniquegroups <- unique(keydf[, group_by, drop = FALSE])
     for (group_index in seq_len(nrow(uniquegroups))) {
         group_name <- unlist(uniquegroups[group_index, ], use.names = FALSE)
         print(paste("Processing group", paste(group_name, collapse = " | "), "which is", group_index, "of", nrow(uniquegroups)))
-        df_contingency_group <- GenSynthPop::ipf_fit_contingency_table(df_contingency = df_contingency, group_name = group_name,
+        df_contingency_group <- withCallingHandlers(
+            GenSynthPop::ipf_fit_contingency_table(df_contingency = df_contingency, group_name = group_name,
                                                             group_by = group_by, margins = margins ,
                                                             margins_names = margins_names,
                                                             marginorder = marginorder,
-                                                            uncoveredcontingency = uncoveredcontingency)
+                                                            uncoveredcontingency = uncoveredcontingency),
+            warning = function(w) {
+                if (grepl("did not converged", w$message, fixed = TRUE)) {
+                    unconverged_groups <<- c(unconverged_groups, paste(group_name, collapse = " | "))
+                    invokeRestart("muffleWarning")
+                }
+            })
         group_fractions <- GenSynthPop::get_group_fractions( df_contingency = df_contingency_group, group_by = group_by, target_attribute = target_attribute, margins_names = margins_names, margins_group = margins_group )
 
         # Only the cells that actually contain agents; empty margin combinations that the
@@ -201,6 +321,22 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
         }
     }
     df[[target_attribute]] <- assigned
+
+    if (length(unconverged_groups) > 0) {
+        failed <- unique(unconverged_groups)
+        examples <- paste(failed[seq_len(min(5, length(failed)))], collapse = ", ")
+        warning(paste0("IPF did not converge for ", length(failed), " of ",
+            nrow(uniquegroups), " group(s) (e.g. ", examples,
+            "). Those groups keep the unfitted contingency distribution.\n",
+            "This usually means the underlying data does not align: the margins of a ",
+            "spatial unit ask for a combination that the contingency table gives zero ",
+            "weight to - national or regional aggregates not matching up with the local ",
+            "ones, for instance a category that only applies to part of the population ",
+            "(such as education levels tabulated for adults only) being fitted against ",
+            "age margins that cover everyone. Check that the sources describe the same ",
+            "population, reference year and age range."), call. = FALSE)
+    }
+
     print("Verifying attribute")
     GenSynthPop::verify_target_attribute(df, df_contingency, target_attribute, margins_group,
                                          margins = margins, margins_names = margins_names,

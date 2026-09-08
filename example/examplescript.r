@@ -82,5 +82,15 @@ agent_df = Conditional_attribute_adder(df = agent_df,
                             margins_names= c("age_group", "sex", "education_level"))
 print(head(agent_df))
 
-write.csv(agent_df, "agents.csv", row.names = FALSE)
+# Education level is only tabulated from age 15 onwards, so edu_sex_age_statistics.csv
+# has no rows for age0_15 and the function leaves those children NA rather than inventing
+# a value for them. Assign them explicitly: they have completed no education yet.
+agent_df$education_level[agent_df$age_group == "age0_15"] = "low"
+
+print(paste("agents still without an education level:", sum(is.na(agent_df$education_level))))
+print(table(agent_df$age_group, agent_df$education_level))
+
+
+# a small excerpt, to show what the generated population looks like
+write.csv(head(agent_df, 50), "sample_agent_output.csv", row.names = FALSE, quote = FALSE)
 

@@ -124,15 +124,29 @@ ipf_fit_contingency_table <- function(df_contingency, group_name, group_by, marg
       margin_df <- margins[[index]]
       mask <- GenSynthPop::get_group_mask(margin_df, group_name, group_by)
       margin_df_masked <- margin_df[mask, ]
-      margin_df_masked[[margins_names[[index]]]] <- factor(margin_df_masked[[margins_names[[index]]]], levels = marginorder[[index]])
-      margin_df_masked <- margin_df_masked[order(margin_df_masked[[margins_names[[index]]]]),]
-      marginaggregates <- unlist(list(margin_df_masked$count)) 
+      # One total per level of the contingency table, in the array's own level order.
+      #
+      # Taking the masked counts as they come assumed the margin holds exactly one row
+      # per level of the contingency table. It does not have to: a contingency table may
+      # legitimately describe a subpopulation, as education levels tabulated for ages 15
+      # and over do, in which case the margin carries categories (age0_15) that the
+      # contingency has no cell for. Those rows used to survive as NA factor levels and
+      # made the aggregate longer than the array dimension, failing with "length of
+      # 'dimnames' not equal to array extent". Summing per level instead confines the
+      # margin to the population the contingency table actually covers, fills absent
+      # levels with zero, and tolerates repeated rows.
+      level_totals <- function(values, counts, levels_wanted) {
+        values <- as.character(values)
+        vapply(as.character(levels_wanted),
+               function(lv) sum(counts[values == lv], na.rm = TRUE), numeric(1))
+      }
+      marginaggregates <- level_totals(margin_df_masked[[margins_names[[index]]]],
+                                       margin_df_masked$count, marginorder[[index]])
       if (sum(marginaggregates) == 0) {
         print(paste("Warning: No data for margin", margins_names[[index]], "in group", group_name, ", using contingency margins instead."))
         contingencymargins <- aggregate(as.formula(paste("count ~", margins_names[[index]])), data = df_contingency, FUN = sum)
-        contingencymargins[[margins_names[[index]]]] <- factor(contingencymargins[[margins_names[[index]]]], levels = marginorder[[index]])
-        contingencymargins <- contingencymargins[order(contingencymargins[[margins_names[[index]]]]),]
-        marginaggregates <- unlist(list(contingencymargins$count))
+        marginaggregates <- level_totals(contingencymargins[[margins_names[[index]]]],
+                                         contingencymargins$count, marginorder[[index]])
       }
       aggregates[[margins_names[[index]]]] <- array(data = marginaggregates, dimnames = list(marginorder[[index]]))
     }
@@ -144,19 +158,38 @@ ipf_fit_contingency_table <- function(df_contingency, group_name, group_by, marg
     } else {
       contvars <- margins_names
     }
-    total_dimensions <- lapply(marginorder, length)
-    df_to_fit <- df_contingency %>%
-      pivot_wider(names_from = contvars[2:length(contvars)],                # Creating wide columns based on second to last margin
-        values_from = "count",                            # Filling with count values
-        values_fill = list(count = 0)                  # Fill NAs with 0
-      )
-    df_to_fit <- as.data.frame(df_to_fit)
-    data_values <- as.numeric(as.matrix(df_to_fit[, -1]))
-    multi_array <- array(
-      data = data_values,     
-      dim = total_dimensions,
-      dimnames = marginorder
-      )
+    total_dimensions <- unlist(lapply(marginorder, length))
+    # Place every contingency row in the cell that its own category combination names.
+    #
+    # This used to reshape the table with pivot_wider() and pour the resulting matrix
+    # into array() positionally, which silently mismatched from three dimensions
+    # upwards: pivot_wider() varies the LAST names_from variable fastest, while array()
+    # fills column-major and so varies the SECOND dimension fastest. With margins
+    # c("age_group", "sex", "education_level") that placed, for example, a count of
+    # female/age0_15/low into the male/age0_15/high cell. Two-dimensional tables were
+    # unaffected, because a single names_from variable leaves no ordering ambiguity.
+    #
+    # Matching on the category labels makes the result independent of the column order
+    # of df_contingency and of how pivot_wider chooses to name and sort its columns.
+    cell_index <- vapply(seq_along(contvars), function(i)
+      match(as.character(df_contingency[[contvars[i]]]), as.character(marginorder[[i]])),
+      integer(nrow(df_contingency)))
+    if (!is.matrix(cell_index)) {
+      cell_index <- matrix(cell_index, nrow = nrow(df_contingency))
+    }
+    # Rows naming a category that is not among the array's levels have no cell to go to.
+    keep <- !apply(is.na(cell_index), 1, any)
+    if (any(!keep)) {
+      warning(paste("Dropping", sum(!keep), "contingency row(s) whose categories do not",
+                    "appear in the margins. Check that the category labels of the",
+                    "contingency table and the margins are spelled identically."))
+    }
+    strides <- c(1, cumprod(total_dimensions)[-length(total_dimensions)])
+    linear_index <- as.vector((cell_index[keep, , drop = FALSE] - 1) %*% strides) + 1
+    multi_array <- array(0, dim = total_dimensions, dimnames = marginorder)
+    # Repeated category combinations are summed, not overwritten.
+    cellsums <- tapply(df_contingency$count[keep], linear_index, sum)
+    multi_array[as.integer(names(cellsums))] <- cellsums
     # One target dimension per supplied margin. The margin variables occupy the
     # leading dimensions of contvars, so these are dimensions 1..length(margins).
     # Not seq_along(contvars): when fewer margins are supplied than the contingency
@@ -182,3 +215,4 @@ ipf_fit_contingency_table <- function(df_contingency, group_name, group_by, marg
   return(as.data.frame(df_fitted))
   }
 }
+

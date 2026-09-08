@@ -116,11 +116,32 @@ verify_target_attribute <- function(df, df_contingency, target_attribute, margin
   # fit quality (it returns ~0.2 for anything from a 1% to an 80% deviation) and
   # errors outright when either vector is constant.
   fitcells <- contingency[contingency$expected_count > 0, ]
-  ChisqTestRes <- chisq.test(x = fitcells$observed_count,
-                             p = fitcells$expected_count / sum(fitcells$expected_count))
+  # chisq.test() warns "Chi-squared approximation may be incorrect" as soon as one
+  # expected count falls below 5, the rule of thumb for the approximation. Comparing per
+  # spatial unit produces such cells by construction - small units, and source counts
+  # rounded to the nearest 5 for disclosure control - and it says nothing about the
+  # quality of the fit. The number of sparse cells is reported instead of the warning,
+  # since the p-value is deliberately not used for any decision here (see below).
+  expected_counts <- sum(as.numeric(fitcells$observed_count)) *
+    as.numeric(fitcells$expected_count) / sum(as.numeric(fitcells$expected_count))
+  n_sparse <- sum(expected_counts < 5)
+  ChisqTestRes <- withCallingHandlers(
+    chisq.test(x = fitcells$observed_count,
+               p = fitcells$expected_count / sum(fitcells$expected_count)),
+    warning = function(w) {
+      if (grepl("Chi-squared approximation may be incorrect", w$message)) {
+        invokeRestart("muffleWarning")
+      }
+    })
   print("Chi-squared test results:")
   print(ChisqTestRes)
   print(paste("Chi-squared test p-value:", ChisqTestRes$p.value))
+  if (n_sparse > 0) {
+    print(paste0("Note: ", n_sparse, " of ", nrow(fitcells), " compared cells have an ",
+                 "expected count below 5, so the chi-squared approximation is unreliable. ",
+                 "That is normal when comparing small spatial units and is not a sign of a ",
+                 "fitting problem - judge the fit by the total variation distance below."))
+  }
 
   # The p-value is reported but not warned on: for a large synthetic population it
   # rejects deviations far too small to matter. The magnitude is judged instead.
@@ -143,7 +164,16 @@ verify_target_attribute <- function(df, df_contingency, target_attribute, margin
   if (total_variation_distance > 0.05) {
     warning(paste0("The added attribute ", target_attribute, " diverges from the contingency table ",
                    "by more than intended local variation explains. Total variation distance: ",
-                   round(100 * total_variation_distance, 2), "%"))
+                   round(100 * total_variation_distance, 2), "%.\n",
+                   "Before reading this as a fitting problem, check whether the underlying data ",
+                   "aligns: this compares the *joint* distribution, so it also grows large when ",
+                   "the contingency table's own composition differs from the local aggregates - ",
+                   "national or regional figures not matching up with the spatial units, a ",
+                   "different reference year, or a table covering only part of the population. ",
+                   "Where that is the case the divergence is arithmetic rather than a fault: the ",
+                   "conditional propensities can still be reproduced correctly. The margin checks ",
+                   "below test the constraints the attribute was actually fitted to and are the ",
+                   "more reliable signal."), call. = FALSE)
   }
 
   # Second check: the margins the attribute was actually fitted to. Unlike the contingency

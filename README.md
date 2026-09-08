@@ -120,7 +120,7 @@ educols = c("high", "middle", "low")
 
 eduneigh_df <- neigh_df[unlist(c("neighb_code", educols))] %>%
   pivot_longer(cols = all_of(educols), 
-               names_to = "sex", 
+               names_to = "education_level", 
                values_to = "count")  
 eduneigh_df <- as.data.frame(eduneigh_df)
 neighwithmissingdata = unique(eduneigh_df$neighb_code[is.na(eduneigh_df$count)])
@@ -137,6 +137,27 @@ print(head(agent_df))
 # but it also works without the eduneigh_df
 
 ```
+
+#### Contingency tables that cover only part of the population
+
+Education level is only tabulated from age 15 onwards, so `edu_sex_age_statistics.csv`
+has no rows for the `age0_15` group at all. The function leaves agents it has no
+distribution for as `NA` and reports them, rather than inventing a value, so those
+children come out of the step above without an education level. Assign them afterwards
+according to whatever the missing category means in your data - here, no completed
+education yet:
+
+```r
+agent_df$education_level[agent_df$age_group == "age0_15"] = "low"
+
+# check that nobody is left unassigned
+sum(is.na(agent_df$education_level))
+```
+
+The same applies to any attribute whose source table describes a subpopulation: fit the
+group the data covers, then fill in the remainder explicitly. The function will warn that
+the margin has categories the contingency table has no cell for, which is exactly what is
+happening here and is expected.
 
 
 ### you can look at the examplescript.R script in the example folder for an application of the functions in the package and example data to run it.
