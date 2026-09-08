@@ -151,12 +151,15 @@ verify_target_attribute <- function(df, df_contingency, target_attribute, margin
   # test here - a correctly fitted attribute sits near 0.1%, well under the threshold.
   if (!is.null(margins) && !is.null(margins_names) && !is.null(group_by)) {
     spatial_key <- function(d) do.call(paste, c(as.list(d[group_by]), sep = "\r"))
+    # Hoisted out of the loop: it does not depend on the margin, and pasting one column
+    # per agent for every margin in turn is the most expensive step in this check.
+    df_spatial_key <- spatial_key(df)
     for (margin_index in seq_along(margins)) {
       margin_name <- margins_names[[margin_index]]
       margin_df <- margins[[margin_index]]
       if (!margin_name %in% colnames(df) || !margin_name %in% colnames(margin_df)) next
 
-      observed <- as.data.frame(table(spatial_key(df), df[[margin_name]]), stringsAsFactors = FALSE)
+      observed <- as.data.frame(table(df_spatial_key, df[[margin_name]]), stringsAsFactors = FALSE)
       colnames(observed) <- c("spatial_unit", margin_name, "observed_count")
       margin_df$spatial_unit <- spatial_key(margin_df)
       compared <- merge(observed, margin_df[, c("spatial_unit", margin_name, "count")],

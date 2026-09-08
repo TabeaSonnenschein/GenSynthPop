@@ -129,12 +129,46 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
     }
     
     print(paste("margins_group: ", margins_group))
+
+    # Columns that subdivide each group. With margins the attribute is assigned per
+    # (group x margin-combination) cell; without margins the group itself is the cell.
+    sub_group_by <- if (is.null(margins)) character(0) else
+        margins_group[!(margins_group %in% group_by) & margins_group != target_attribute]
+
+    # Resolve every agent to its cell in a single pass over the population.
+    #
+    # The previous implementation located each cell by scanning the whole population
+    # with get_group_mask() once per group *and* once per sub-group column, then called
+    # nrow(df[mask, ]) - which materialises a full copy of every column merely to count
+    # rows. That made the loop O(groups x cells x columns x nrow(df)); profiling a
+    # 861k-agent, 457-neighbourhood run spent ~99% of its time there and under 1% in the
+    # actual IPF. Splitting the row indices once is O(nrow(df)) in total and leaves the
+    # statistics untouched.
+    #
+    # Keys are compared as character: the group columns are typically factors, and
+    # factor == character dispatches to Ops.factor/NextMethod, which alone accounted for
+    # over a third of the old runtime.
+    keycols <- c(group_by, sub_group_by)
+    keydf <- df[, keycols, drop = FALSE]
+    keydf[] <- lapply(keydf, as.character)
+    cells <- unique(keydf)
+    cell_key <- do.call(paste, c(cells, sep = "\r"))
+    row_key <- do.call(paste, c(keydf, sep = "\r"))
+    # levels = cell_key keeps cell_rows[[i]] aligned with cells[i, ]
+    cell_rows <- split(seq_len(nrow(df)), factor(row_key, levels = cell_key))
+    cells_by_group <- split(seq_along(cell_key),
+                            do.call(paste, c(cells[group_by], sep = "\r")))
+
+    # Collect the assignments in a plain vector. Writing them straight into df would go
+    # through [<-.data.frame once per cell, copying the frame each time.
+    assigned <- rep(NA_character_, nrow(df))
+
     # Main loop over the group-by attributes. Iterating over unique *combinations*
     # keeps a multi-column group_by working, as documented: df[[group_by]] would be
     # recursive indexing (df[["a"]][["b"]]) and fails for more than one column.
-    uniquegroups <- unique(df[, group_by, drop = FALSE])
+    uniquegroups <- unique(keydf[, group_by, drop = FALSE])
     for (group_index in seq_len(nrow(uniquegroups))) {
-        group_name <- sapply(group_by, function(col) as.character(uniquegroups[[col]][group_index]))
+        group_name <- unlist(uniquegroups[group_index, ], use.names = FALSE)
         print(paste("Processing group", paste(group_name, collapse = " | "), "which is", group_index, "of", nrow(uniquegroups)))
         df_contingency_group <- GenSynthPop::ipf_fit_contingency_table(df_contingency = df_contingency, group_name = group_name,
                                                             group_by = group_by, margins = margins ,
@@ -142,31 +176,31 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
                                                             marginorder = marginorder,
                                                             uncoveredcontingency = uncoveredcontingency)
         group_fractions <- GenSynthPop::get_group_fractions( df_contingency = df_contingency_group, group_by = group_by, target_attribute = target_attribute, margins_names = margins_names, margins_group = margins_group )
-        group_mask <- GenSynthPop::get_group_mask(df, group_name, group_by)
-        if (is.null(margins)) {
-          group_values <- GenSynthPop::get_agent_values_from_fractions(group_fractions= group_fractions, group_agent_count= sum(group_mask), target_attribute= target_attribute)
-          df[group_mask, target_attribute] <- group_values
-        } else {
-          sub_group_by <- margins_group[!(margins_group %in% group_by) & margins_group != target_attribute]
-          sub_group_combinations <- as.data.frame(expand.grid(lapply(sub_group_by, function(col) unique(df[[col]]))))
-          colnames(sub_group_combinations) <- sub_group_by
-          for (sub_group_comb_indx in seq_len(nrow(sub_group_combinations))) {
-              current_combination <- as.vector(unlist(sub_group_combinations[sub_group_comb_indx, sub_group_by]))
-              mask <- group_mask
-              for (sub_group in sub_group_by) {
-                  mask <- mask & GenSynthPop::get_group_mask(df,sub_group_combinations[sub_group_comb_indx,sub_group], sub_group)
-              }
-              if (!any(mask)) next
-              sub_group_fractions <- group_fractions
-              for (i in seq_along(sub_group_by)) {
-                sub_group_fractions <- sub_group_fractions[sub_group_fractions[[sub_group_by[i]]] == current_combination[i], ]
-              }
-              sub_group_fractions <- sub_group_fractions[, c(target_attribute,"fraction")]
-              group_values <- GenSynthPop::get_agent_values_from_fractions(group_fractions=sub_group_fractions, group_agent_count= nrow(df[mask, ]), target_attribute = target_attribute)
-              df[mask, target_attribute] <- group_values
-          }
+
+        # Only the cells that actually contain agents; empty margin combinations that the
+        # old expand.grid() produced and then skipped never get built in the first place.
+        for (cell_index in cells_by_group[[paste(group_name, collapse = "\r")]]) {
+            rows <- cell_rows[[cell_index]]
+            if (!length(rows)) next
+            cell_fractions <- group_fractions
+            for (i in seq_along(sub_group_by)) {
+                cell_fractions <- cell_fractions[as.character(cell_fractions[[sub_group_by[i]]]) ==
+                                                     cells[cell_index, sub_group_by[i]], , drop = FALSE]
+            }
+            cell_fractions <- cell_fractions[, c(target_attribute, "fraction"), drop = FALSE]
+            # A cell with no rows at all - a group absent from the contingency table - is
+            # left NA, and verify_target_attribute() reports the unassigned agents. It is
+            # not passed to calculate_group_counts(), whose correction loop cannot reach
+            # the agent total from an empty fraction set and spins forever.
+            # Cells that do have rows but sum to zero are still passed through, so the
+            # existing behaviour of falling back to the first category is unchanged.
+            if (nrow(cell_fractions) == 0) next
+            assigned[rows] <- GenSynthPop::get_agent_values_from_fractions(group_fractions = cell_fractions,
+                                                                          group_agent_count = length(rows),
+                                                                          target_attribute = target_attribute)
         }
     }
+    df[[target_attribute]] <- assigned
     print("Verifying attribute")
     GenSynthPop::verify_target_attribute(df, df_contingency, target_attribute, margins_group,
                                          margins = margins, margins_names = margins_names,

@@ -6,7 +6,8 @@ library(dplyr)
 
 ?Conditional_attribute_adder 
 
-setwd("C:/Users/6513301/OneDrive - Universiteit Utrecht/Documents/GitHub/GenSynthPop/example")
+script_dir <- file.path(rprojroot::find_root(rprojroot::is_git_root), "example")
+setwd(script_dir)
 
 # Load the library
 neigh_df = read.csv("Neighborhood_statistics.csv")
