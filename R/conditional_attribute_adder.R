@@ -129,26 +129,30 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
     }
     
     print(paste("margins_group: ", margins_group))
-    # Main loop over the group-by attributes
-    uniquegroups  <- unique(df[[group_by]])
-    for (group_name in uniquegroups) {
-        print(paste("Processing group", group_name, "which is", which(uniquegroups == group_name), "of", length(uniquegroups)))
-        df_contingency_group <- GenSynthPop::ipf_fit_contingency_table(df_contingency = df_contingency, group_name = group_name, 
-                                                            group_by = group_by, margins = margins , 
-                                                            margins_names = margins_names, 
-                                                            marginorder = marginorder, 
+    # Main loop over the group-by attributes. Iterating over unique *combinations*
+    # keeps a multi-column group_by working, as documented: df[[group_by]] would be
+    # recursive indexing (df[["a"]][["b"]]) and fails for more than one column.
+    uniquegroups <- unique(df[, group_by, drop = FALSE])
+    for (group_index in seq_len(nrow(uniquegroups))) {
+        group_name <- sapply(group_by, function(col) as.character(uniquegroups[[col]][group_index]))
+        print(paste("Processing group", paste(group_name, collapse = " | "), "which is", group_index, "of", nrow(uniquegroups)))
+        df_contingency_group <- GenSynthPop::ipf_fit_contingency_table(df_contingency = df_contingency, group_name = group_name,
+                                                            group_by = group_by, margins = margins ,
+                                                            margins_names = margins_names,
+                                                            marginorder = marginorder,
                                                             uncoveredcontingency = uncoveredcontingency)
         group_fractions <- GenSynthPop::get_group_fractions( df_contingency = df_contingency_group, group_by = group_by, target_attribute = target_attribute, margins_names = margins_names, margins_group = margins_group )
+        group_mask <- GenSynthPop::get_group_mask(df, group_name, group_by)
         if (is.null(margins)) {
-          group_values <- GenSynthPop::get_agent_values_from_fractions(group_fractions= group_fractions, group_agent_count= nrow(df[df[group_by] == group_name,]), target_attribute= target_attribute)
-          df[df[[group_by]] == group_name, target_attribute] <- group_values
+          group_values <- GenSynthPop::get_agent_values_from_fractions(group_fractions= group_fractions, group_agent_count= sum(group_mask), target_attribute= target_attribute)
+          df[group_mask, target_attribute] <- group_values
         } else {
           sub_group_by <- margins_group[!(margins_group %in% group_by) & margins_group != target_attribute]
           sub_group_combinations <- as.data.frame(expand.grid(lapply(sub_group_by, function(col) unique(df[[col]]))))
           colnames(sub_group_combinations) <- sub_group_by
           for (sub_group_comb_indx in seq_len(nrow(sub_group_combinations))) {
               current_combination <- as.vector(unlist(sub_group_combinations[sub_group_comb_indx, sub_group_by]))
-              mask <- GenSynthPop::get_group_mask(df, group_name, group_by) 
+              mask <- group_mask
               for (sub_group in sub_group_by) {
                   mask <- mask & GenSynthPop::get_group_mask(df,sub_group_combinations[sub_group_comb_indx,sub_group], sub_group)
               }
@@ -164,6 +168,8 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
         }
     }
     print("Verifying attribute")
-    GenSynthPop::verify_target_attribute(df, df_contingency, target_attribute, margins_group)
+    GenSynthPop::verify_target_attribute(df, df_contingency, target_attribute, margins_group,
+                                         margins = margins, margins_names = margins_names,
+                                         group_by = group_by)
     return(df)
 }
