@@ -62,41 +62,117 @@ synthetic_population_to_contingency <- function(df_synthetic_population, columns
 #' Verify the Target Attribute
 #'
 #' This function verifies the integrity of the target attribute in the synthetic population.
-#' It checks if any agents have not been assigned a value for the target attribute and compares
-#' the distribution of the target attribute with a given contingency table using a Z-squared test.
+#' It checks if any agents have not been assigned a value for the target attribute, and then
+#' compares the result against both sources it was built from:
+#'
+#' 1. the contingency table, i.e. the region-wide joint distribution of the target attribute
+#'    with the other attributes, and
+#' 2. the margins, i.e. the totals published for each spatial unit, if they were supplied.
+#'
+#' The two answer different questions. Divergence from the contingency table is expected
+#' whenever the attribute is fitted to local margins or assigned to a subpopulation, whereas
+#' the margins are a hard constraint the population is meant to reproduce, so a divergence
+#' there points at a fitting problem.
 #'
 #' @param df A data frame representing the synthetic population that includes the target attribute.
 #' @param df_contingency A data frame representing the original distribution from which the target attribute
 #'                        is derived.
 #' @param target_attribute A string representing the name of the target attribute to verify.
 #' @param margins_group A vector of attribute names used to group the data for comparison.
+#' @param margins An optional list of the marginal distribution data frames the attribute was fitted to.
+#' @param margins_names An optional vector naming the margin column in each data frame in `margins`.
+#' @param group_by An optional vector of column names identifying the spatial unit the margins apply to.
 #'
 #' @return NULL This function does not return any value; it generates warnings if there are issues
 #'               with the target attribute.
-#' 
+#'
 #' @importFrom stats chisq.test
 #' @importFrom dplyr inner_join
-#' 
+#'
 #' @export
-verify_target_attribute <- function(df, df_contingency, target_attribute, margins_group) {
+verify_target_attribute <- function(df, df_contingency, target_attribute, margins_group,
+                                    margins = NULL, margins_names = NULL, group_by = NULL) {
   if (any(is.na(df[[target_attribute]]))) {
     warning(paste("Not all agents were assigned a", target_attribute, "value. Caution advised."))
   }
-  group_by <- unique(c(margins_group, target_attribute))
-  contingency <- GenSynthPop::synthetic_population_to_contingency(df, group_by) %>%
-    dplyr::inner_join(df_contingency, by = group_by) 
-  colnames(contingency) <- c(group_by, "observed_count", "expected_count")
+  # Named separately from the group_by argument, which identifies the spatial unit the
+  # margins apply to and is still needed further down.
+  contingency_group <- unique(c(margins_group, target_attribute))
+  contingency <- GenSynthPop::synthetic_population_to_contingency(df, contingency_group) %>%
+    dplyr::inner_join(df_contingency, by = contingency_group)
+  # Select the two count columns by name rather than by position: df_contingency may
+  # carry columns beyond the join keys and the count, in which case the join is wider
+  # than length(contingency_group) + 2 and positional renaming silently mislabels them.
+  expected_col <- if ("count" %in% colnames(df_contingency)) "count" else
+    setdiff(colnames(df_contingency), contingency_group)[1]
+  contingency <- contingency[, c(contingency_group, "Freq", expected_col)]
+  colnames(contingency) <- c(contingency_group, "observed_count", "expected_count")
   print("Final Contingency table:")
   print(contingency)
 
-  ChisqTestRes <- chisq.test(contingency$observed_count, 
-                              contingency$expected_count, 
-                              # simulate.p.value = TRUE #uses simulation conditional on the marginals, is a version of the Fisher exact test
-                              ) 
+  # Goodness-of-fit, not independence: the question is whether the observed counts
+  # follow the expected distribution. Passing the two count vectors as x and y
+  # instead tests whether they are independent, whose p-value barely responds to
+  # fit quality (it returns ~0.2 for anything from a 1% to an 80% deviation) and
+  # errors outright when either vector is constant.
+  fitcells <- contingency[contingency$expected_count > 0, ]
+  ChisqTestRes <- chisq.test(x = fitcells$observed_count,
+                             p = fitcells$expected_count / sum(fitcells$expected_count))
   print("Chi-squared test results:")
   print(ChisqTestRes)
   print(paste("Chi-squared test p-value:", ChisqTestRes$p.value))
-  if (ChisqTestRes$p.value > 0.05) {
-    warning(paste("The added attribute", target_attribute, "does not statistically match the original distribution. P-value:", ChisqTestRes$p.value))
+
+  # The p-value is reported but not warned on: for a large synthetic population it
+  # rejects deviations far too small to matter. The magnitude is judged instead.
+  observed_share <- fitcells$observed_count / sum(fitcells$observed_count)
+  expected_share <- fitcells$expected_count / sum(fitcells$expected_count)
+  total_variation_distance <- 0.5 * sum(abs(observed_share - expected_share))
+
+  print(paste0("Contingency table - total variation distance: ", round(100 * total_variation_distance, 2),
+               "% of agents would have to be reassigned to another category to reproduce ",
+               "the source distribution exactly."))
+  print(paste("Some divergence is expected and intended: the attribute is fitted to each",
+              "spatial unit's own margins and jointly with the other attributes, so the",
+              "population is meant to depart from the region-wide source table wherever",
+              "local composition differs from it."))
+
+  # Threshold set at 5%: an attribute drawn straight from the contingency table lands
+  # near 0.1%, while fitting to local margins moves the joint distribution a few percent
+  # off the region-wide table by design. Past 5% the divergence is larger than that
+  # intended local and multi-variable variation comfortably accounts for.
+  if (total_variation_distance > 0.05) {
+    warning(paste0("The added attribute ", target_attribute, " diverges from the contingency table ",
+                   "by more than intended local variation explains. Total variation distance: ",
+                   round(100 * total_variation_distance, 2), "%"))
+  }
+
+  # Second check: the margins the attribute was actually fitted to. Unlike the contingency
+  # table these are a hard constraint per spatial unit, so the same 5% is a much stricter
+  # test here - a correctly fitted attribute sits near 0.1%, well under the threshold.
+  if (!is.null(margins) && !is.null(margins_names) && !is.null(group_by)) {
+    spatial_key <- function(d) do.call(paste, c(as.list(d[group_by]), sep = "\r"))
+    for (margin_index in seq_along(margins)) {
+      margin_name <- margins_names[[margin_index]]
+      margin_df <- margins[[margin_index]]
+      if (!margin_name %in% colnames(df) || !margin_name %in% colnames(margin_df)) next
+
+      observed <- as.data.frame(table(spatial_key(df), df[[margin_name]]), stringsAsFactors = FALSE)
+      colnames(observed) <- c("spatial_unit", margin_name, "observed_count")
+      margin_df$spatial_unit <- spatial_key(margin_df)
+      compared <- merge(observed, margin_df[, c("spatial_unit", margin_name, "count")],
+                        by = c("spatial_unit", margin_name))
+      compared <- compared[!is.na(compared$count), ]
+      if (nrow(compared) == 0 || sum(compared$observed_count) == 0 || sum(compared$count) == 0) next
+
+      margin_tvd <- 0.5 * sum(abs(compared$observed_count / sum(compared$observed_count) -
+                                    compared$count / sum(compared$count)))
+      print(paste0("Margin '", margin_name, "' - total variation distance across spatial units: ",
+                   round(100 * margin_tvd, 2), "%"))
+      if (margin_tvd > 0.05) {
+        warning(paste0("The added attribute ", target_attribute, " does not reproduce the '", margin_name,
+                       "' margins of the spatial units it was fitted to. Total variation distance: ",
+                       round(100 * margin_tvd, 2), "%"))
+      }
+    }
   }
 }
