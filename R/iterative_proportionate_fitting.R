@@ -157,7 +157,13 @@ ipf_fit_contingency_table <- function(df_contingency, group_name, group_by, marg
       dim = total_dimensions,
       dimnames = marginorder
       )
-    margindimensions <- seq_along(length(contvars))
+    # One target dimension per supplied margin. The margin variables occupy the
+    # leading dimensions of contvars, so these are dimensions 1..length(margins).
+    # Not seq_along(contvars): when fewer margins are supplied than the contingency
+    # table has dimensions, target.list would be longer than target.data and Ipfp
+    # fails with "subscript out of bounds". Not seq_along(length(contvars)) either,
+    # which evaluates to 1 and silently constrains only the first dimension.
+    margindimensions <- seq_along(margins_names)
 
     # Call the Ipfp function to perform the iterative proportional fitting
     ipf_results <- GenSynthPop::suppress_probability_warning(Ipfp(
