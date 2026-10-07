@@ -50,8 +50,14 @@ suppress_probability_warning <- function(expr) {
 #'     marginal distributions are provided.
 #' @param marginorder A list of vectors, where each vector contains the levels (order) of the corresponding margin variable.
 #'     The order of each margin will be used when transforming the contingency table to a multi-dimensional array.
-#' @param uncoveredcontingency A list of column names for variables in the contingency table that do not have 
+#' @param uncoveredcontingency A list of column names for variables in the contingency table that do not have
 #'     associated marginal distributions. These will be incorporated into the multi-dimensional array for IPF but are not constrained by margins.
+#' @param suppressed_margin_value Value to use for a margin category that is NA for this group while other
+#'     categories of the same margin are present, as happens when a statistical office withholds small cells.
+#'     Defaults to 0, treating a withheld category as absent, which suits disclosure rules that withhold a cell
+#'     because it is below a threshold. Set it to a figure of your own (for example half of a known threshold)
+#'     to reserve some population for the withheld category instead. Groups whose margin is entirely NA are
+#'     unaffected and continue to fall back to the contingency table.
 #'
 #' @return A data frame of the fitted contingency table, where the counts have been adjusted to match the provided margins.
 #'     The resulting data frame will include all the original variables along with the adjusted `count` column.
@@ -114,7 +120,7 @@ suppress_probability_warning <- function(expr) {
 #' @importFrom stats aggregate as.formula setNames
 #' @importFrom mipfp Ipfp
 #' @export
-ipf_fit_contingency_table <- function(df_contingency, group_name, group_by, margins = NULL, margins_names = NULL, marginorder = NULL, uncoveredcontingency = NULL) {
+ipf_fit_contingency_table <- function(df_contingency, group_name, group_by, margins = NULL, margins_names = NULL, marginorder = NULL, uncoveredcontingency = NULL, suppressed_margin_value = 0) {
   if (is.null(margins)) {
     mask <- GenSynthPop::get_group_mask(df_contingency, group_name, group_by)
     return(df_contingency[mask, ])
@@ -142,6 +148,21 @@ ipf_fit_contingency_table <- function(df_contingency, group_name, group_by, marg
       }
       marginaggregates <- level_totals(margin_df_masked[[margins_names[[index]]]],
                                        margin_df_masked$count, marginorder[[index]])
+      # A category a statistical office withheld arrives as NA and is read as 0 above,
+      # which is the sensible default: such a category is usually withheld precisely
+      # because it falls below a disclosure threshold, so it is known to be small.
+      # suppressed_margin_value lets a caller put a different figure there instead,
+      # e.g. half of a threshold they know applies. Only groups that have some
+      # categories published are touched; a group with none still takes the fallback
+      # to the contingency table below.
+      if (suppressed_margin_value != 0) {
+        published <- vapply(as.character(marginorder[[index]]), function(lv) {
+          any(!is.na(margin_df_masked$count[as.character(margin_df_masked[[margins_names[[index]]]]) == lv]))
+        }, logical(1))
+        if (any(published) && !all(published)) {
+          marginaggregates[!published] <- suppressed_margin_value
+        }
+      }
       if (sum(marginaggregates) == 0) {
         print(paste("Warning: No data for margin", margins_names[[index]], "in group", group_name, ", using contingency margins instead."))
         contingencymargins <- aggregate(as.formula(paste("count ~", margins_names[[index]])), data = df_contingency, FUN = sum)

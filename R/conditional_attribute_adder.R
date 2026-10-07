@@ -122,8 +122,15 @@ check_data_alignment <- function(df, df_contingency, margins, margins_names, gro
 #' by which the population and margins tables are grouped and whose subgroup marginal distributions are used to fit the contingency table using IPF. Group_by often represent spatial or categorical splits.
 #' @param margins An optional list of data frames containing marginal distributions to be used for IPF. If NULL, 
 #' only the contingency table is used.
-#' @param margins_names An optional list of vectors containing the names of the margin columns, corresponding 
+#' @param margins_names An optional list of vectors containing the names of the margin columns, corresponding
 #' to the data frames in `margins`. Each vector should list the margin names for the respective data frame.
+#' @param suppressed_margin_value Value to use for a margin category that is NA for a group while other
+#' categories of the same margin are present, as happens when a statistical office withholds small cells.
+#' Defaults to 0, treating a withheld category as absent. That suits disclosure rules that withhold a cell
+#' *because* it sits below a threshold, which makes the withheld value small but unknown rather than average -
+#' CBS neighbourhood education counts, for instance, are never published below 50. Set it to a figure of your
+#' own, such as half of a threshold you know applies, to reserve some population for the withheld category.
+#' Groups whose margin for a variable is entirely NA are unaffected: they still fall back to the contingency table.
 #'
 #' @details This function adds a target attribute (e.g., age, income level, etc.) to a synthetic population, based on 
 #' its distribution in a provided contingency table. If marginal distributions are supplied, IPF is applied to adjust the 
@@ -185,8 +192,9 @@ check_data_alignment <- function(df, df_contingency, margins, margins_names, gro
 #' @importFrom tidyr pivot_wider
 #' @importFrom stats aggregate as.formula ave chisq.test complete.cases setNames
 #' @export
-Conditional_attribute_adder <- function(df, df_contingency, target_attribute, 
-                              group_by = NULL, margins = NULL, margins_names = NULL) {
+Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
+                              group_by = NULL, margins = NULL, margins_names = NULL,
+                              suppressed_margin_value = 0) {
     # Reset and clean the synthetic population dataframe
     if ("index" %in% colnames(df)) {
         df <- df[ , !colnames(df) %in% "index"]
@@ -288,7 +296,8 @@ Conditional_attribute_adder <- function(df, df_contingency, target_attribute,
                                                             group_by = group_by, margins = margins ,
                                                             margins_names = margins_names,
                                                             marginorder = marginorder,
-                                                            uncoveredcontingency = uncoveredcontingency),
+                                                            uncoveredcontingency = uncoveredcontingency,
+                                                            suppressed_margin_value = suppressed_margin_value),
             warning = function(w) {
                 if (grepl("did not converged", w$message, fixed = TRUE)) {
                     unconverged_groups <<- c(unconverged_groups, paste(group_name, collapse = " | "))
