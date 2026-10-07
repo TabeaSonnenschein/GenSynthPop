@@ -221,13 +221,6 @@ verify_target_attribute <- function(df, df_contingency, target_attribute, margin
     print(paste0("(", distance$n_skipped, " of ", distance$n_groups + distance$n_skipped,
                  " groups were empty on one side and left out of that figure.)"))
   }
-  print(paste0("Reported for context rather than judged: group sizes differ from the source table ",
-               "by ", round(100 * distance$marginal, 2), "%, which taken together with the above ",
-               "gives an undivided distance of ", round(100 * distance$joint, 2), "%. The number of ",
-               "agents in each group comes from the population and from earlier steps, not from this ",
-               "table, so a large value there says the two describe different populations - a ",
-               "different reference year, a national table against local units, a table covering only ",
-               "part of the population, or counts given as shares - rather than that the fit is wrong."))
 
   # Threshold set at 5%: an attribute drawn straight from the contingency table lands
   # near 0.1%, while fitting to local margins moves the distribution a few percent off
