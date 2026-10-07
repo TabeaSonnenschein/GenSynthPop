@@ -59,6 +59,62 @@ synthetic_population_to_contingency <- function(df_synthetic_population, columns
 }
 
 
+#' Split a Total Variation Distance into its Conditional and Marginal Parts
+#'
+#' Compares observed against expected counts and separates the two things that can make
+#' them differ: the distribution *within* each group, and the relative sizes of the groups
+#' themselves.
+#'
+#' The distinction matters because fitting an attribute by `group_by` controls only the
+#' first of these. Group sizes come from the population, not from the contingency table.
+#' Measuring the two together - normalising every cell by the grand total - therefore
+#' reports a size mismatch as though it were a fitting error, and does so exactly: when
+#' the conditional distributions are reproduced perfectly, the joint distance reduces
+#' algebraically to the marginal one. A contingency table expressed as shares rather than
+#' counts, a national table compared against local units, or a table covering only part of
+#' the population will each produce a large joint distance with nothing wrong in the fit.
+#'
+#' @param observed_count Observed counts, one per cell
+#' @param expected_count Expected counts, one per cell
+#' @param group Vector naming the group each cell belongs to. A single constant value
+#'   leaves the conditional distance equal to the joint one.
+#' @return A list with `conditional` (group-size weighted mean of the within-group
+#'   distances), `marginal` (distance between the two sets of group sizes), `joint` (the
+#'   undivided distance over all cells), and the number of groups compared and skipped.
+#' @keywords internal
+#' @export
+split_total_variation_distance <- function(observed_count, expected_count, group) {
+  observed_count <- as.numeric(observed_count)
+  expected_count <- as.numeric(expected_count)
+  group <- as.character(group)
+
+  joint <- 0.5 * sum(abs(observed_count / sum(observed_count) -
+                           expected_count / sum(expected_count)))
+
+  observed_group <- tapply(observed_count, group, sum)
+  expected_group <- tapply(expected_count, group, sum)[names(observed_group)]
+  marginal <- 0.5 * sum(abs(observed_group / sum(observed_group) -
+                              expected_group / sum(expected_group)))
+
+  # A group with nothing on one side has no distribution to compare; it is left out of
+  # the conditional distance rather than counted as a perfect or a total mismatch.
+  comparable <- observed_group > 0 & expected_group > 0
+  per_group <- vapply(names(observed_group), function(g) {
+    if (!isTRUE(comparable[[g]])) return(NA_real_)
+    cells <- group == g
+    0.5 * sum(abs(observed_count[cells] / sum(observed_count[cells]) -
+                    expected_count[cells] / sum(expected_count[cells])))
+  }, numeric(1))
+
+  weight <- observed_group[names(per_group)]
+  keep <- !is.na(per_group)
+  conditional <- if (any(keep)) sum(per_group[keep] * weight[keep]) / sum(weight[keep]) else NA_real_
+
+  list(conditional = conditional, marginal = marginal, joint = joint,
+       n_groups = sum(keep), n_skipped = sum(!keep))
+}
+
+
 #' Verify the Target Attribute
 #'
 #' This function verifies the integrity of the target attribute in the synthetic population.
@@ -144,36 +200,48 @@ verify_target_attribute <- function(df, df_contingency, target_attribute, margin
   }
 
   # The p-value is reported but not warned on: for a large synthetic population it
-  # rejects deviations far too small to matter. The magnitude is judged instead.
-  observed_share <- fitcells$observed_count / sum(fitcells$observed_count)
-  expected_share <- fitcells$expected_count / sum(fitcells$expected_count)
-  total_variation_distance <- 0.5 * sum(abs(observed_share - expected_share))
+  # rejects deviations far too small to matter. The magnitude is judged instead, and
+  # judged on the distribution within each combination of the other attributes, since
+  # that is what fitting the target actually determines - the number of agents holding
+  # each combination was settled by earlier steps and by the population itself.
+  conditioned_on <- setdiff(contingency_group, target_attribute)
+  cell_group <- if (length(conditioned_on) == 0) rep("all", nrow(fitcells)) else
+    do.call(paste, c(as.list(fitcells[conditioned_on]), sep = "\r"))
+  distance <- GenSynthPop::split_total_variation_distance(fitcells$observed_count,
+                                                          fitcells$expected_count, cell_group)
+  total_variation_distance <- distance$conditional
 
-  print(paste0("Contingency table - total variation distance: ", round(100 * total_variation_distance, 2),
-               "% of agents would have to be reassigned to another category to reproduce ",
-               "the source distribution exactly."))
-  print(paste("Some divergence is expected and intended: the attribute is fitted to each",
-              "spatial unit's own margins and jointly with the other attributes, so the",
-              "population is meant to depart from the region-wide source table wherever",
-              "local composition differs from it."))
+  within <- if (length(conditioned_on) == 0) "the population as a whole" else
+    paste("each", paste(conditioned_on, collapse = " x "))
+  print(paste0("Contingency table - total variation distance within ", within, ": ",
+               round(100 * distance$conditional, 2), "% of agents would have to be reassigned to ",
+               "another ", target_attribute, " to reproduce the source distribution inside their ",
+               "own group."))
+  if (distance$n_skipped > 0) {
+    print(paste0("(", distance$n_skipped, " of ", distance$n_groups + distance$n_skipped,
+                 " groups were empty on one side and left out of that figure.)"))
+  }
+  print(paste0("Reported for context rather than judged: group sizes differ from the source table ",
+               "by ", round(100 * distance$marginal, 2), "%, which taken together with the above ",
+               "gives an undivided distance of ", round(100 * distance$joint, 2), "%. The number of ",
+               "agents in each group comes from the population and from earlier steps, not from this ",
+               "table, so a large value there says the two describe different populations - a ",
+               "different reference year, a national table against local units, a table covering only ",
+               "part of the population, or counts given as shares - rather than that the fit is wrong."))
 
   # Threshold set at 5%: an attribute drawn straight from the contingency table lands
-  # near 0.1%, while fitting to local margins moves the joint distribution a few percent
-  # off the region-wide table by design. Past 5% the divergence is larger than that
-  # intended local and multi-variable variation comfortably accounts for.
-  if (total_variation_distance > 0.05) {
-    warning(paste0("The added attribute ", target_attribute, " diverges from the contingency table ",
-                   "by more than intended local variation explains. Total variation distance: ",
+  # near 0.1%, while fitting to local margins moves the distribution a few percent off
+  # the region-wide table by design. Past 5% the divergence is larger than that intended
+  # local and multi-variable variation comfortably accounts for.
+  if (!is.na(total_variation_distance) && total_variation_distance > 0.05) {
+    warning(paste0("The added attribute ", target_attribute, " does not reproduce the distribution ",
+                   "the contingency table specifies within ", within, ". Total variation distance: ",
                    round(100 * total_variation_distance, 2), "%.\n",
-                   "Before reading this as a fitting problem, check whether the underlying data ",
-                   "aligns: this compares the *joint* distribution, so it also grows large when ",
-                   "the contingency table's own composition differs from the local aggregates - ",
-                   "national or regional figures not matching up with the spatial units, a ",
-                   "different reference year, or a table covering only part of the population. ",
-                   "Where that is the case the divergence is arithmetic rather than a fault: the ",
-                   "conditional propensities can still be reproduced correctly. The margin checks ",
-                   "below test the constraints the attribute was actually fitted to and are the ",
-                   "more reliable signal."), call. = FALSE)
+                   "This measures only the composition inside each group, so it is not inflated by ",
+                   "the source table and the population differing in size or coverage. Check the ",
+                   "contingency table against the attributes already assigned, and the margin ",
+                   "checks below, which test the constraints the attribute was fitted to."),
+            call. = FALSE)
   }
 
   # Second check: the margins the attribute was actually fitted to. Unlike the contingency
@@ -197,14 +265,20 @@ verify_target_attribute <- function(df, df_contingency, target_attribute, margin
       compared <- compared[!is.na(compared$count), ]
       if (nrow(compared) == 0 || sum(compared$observed_count) == 0 || sum(compared$count) == 0) next
 
-      margin_tvd <- 0.5 * sum(abs(compared$observed_count / sum(compared$observed_count) -
-                                    compared$count / sum(compared$count)))
-      print(paste0("Margin '", margin_name, "' - total variation distance across spatial units: ",
-                   round(100 * margin_tvd, 2), "%"))
-      if (margin_tvd > 0.05) {
+      # Split the same way as above. A margin can cover a different population from the
+      # agents being fitted - counts for ages 15 to 75 against a population of 15 and
+      # over, say - and that difference belongs in the marginal part, not in the fit.
+      margin_distance <- GenSynthPop::split_total_variation_distance(compared$observed_count,
+                                                                     compared$count,
+                                                                     compared$spatial_unit)
+      print(paste0("Margin '", margin_name, "' - total variation distance within spatial units: ",
+                   round(100 * margin_distance$conditional, 2),
+                   "% (unit sizes differ by ", round(100 * margin_distance$marginal, 2),
+                   "%, undivided ", round(100 * margin_distance$joint, 2), "%)"))
+      if (!is.na(margin_distance$conditional) && margin_distance$conditional > 0.05) {
         warning(paste0("The added attribute ", target_attribute, " does not reproduce the '", margin_name,
-                       "' margins of the spatial units it was fitted to. Total variation distance: ",
-                       round(100 * margin_tvd, 2), "%"))
+                       "' composition of the spatial units it was fitted to. Total variation distance: ",
+                       round(100 * margin_distance$conditional, 2), "%"))
       }
     }
   }

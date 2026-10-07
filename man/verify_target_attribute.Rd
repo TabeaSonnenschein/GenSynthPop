@@ -4,7 +4,15 @@
 \alias{verify_target_attribute}
 \title{Verify the Target Attribute}
 \usage{
-verify_target_attribute(df, df_contingency, target_attribute, margins_group)
+verify_target_attribute(
+  df,
+  df_contingency,
+  target_attribute,
+  margins_group,
+  margins = NULL,
+  margins_names = NULL,
+  group_by = NULL
+)
 }
 \arguments{
 \item{df}{A data frame representing the synthetic population that includes the target attribute.}
@@ -15,6 +23,12 @@ is derived.}
 \item{target_attribute}{A string representing the name of the target attribute to verify.}
 
 \item{margins_group}{A vector of attribute names used to group the data for comparison.}
+
+\item{margins}{An optional list of the marginal distribution data frames the attribute was fitted to.}
+
+\item{margins_names}{An optional vector naming the margin column in each data frame in \code{margins}.}
+
+\item{group_by}{An optional vector of column names identifying the spatial unit the margins apply to.}
 }
 \value{
 NULL This function does not return any value; it generates warnings if there are issues
@@ -22,6 +36,18 @@ with the target attribute.
 }
 \description{
 This function verifies the integrity of the target attribute in the synthetic population.
-It checks if any agents have not been assigned a value for the target attribute and compares
-the distribution of the target attribute with a given contingency table using a Z-squared test.
+It checks if any agents have not been assigned a value for the target attribute, and then
+compares the result against both sources it was built from:
+}
+\details{
+\enumerate{
+\item the contingency table, i.e. the region-wide joint distribution of the target attribute
+with the other attributes, and
+\item the margins, i.e. the totals published for each spatial unit, if they were supplied.
+}
+
+The two answer different questions. Divergence from the contingency table is expected
+whenever the attribute is fitted to local margins or assigned to a subpopulation, whereas
+the margins are a hard constraint the population is meant to reproduce, so a divergence
+there points at a fitting problem.
 }
