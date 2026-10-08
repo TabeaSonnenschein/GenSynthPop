@@ -1,2 +1,8 @@
 ^GenSynthPop\.Rproj$
 ^\.Rproj\.user$
+^README\.md$
+^example$
+^server_user_id\.txt$
+^.*\.tar\.gz$
+^\.\.Rcheck$
+^GenSynthPop\.Rcheck$

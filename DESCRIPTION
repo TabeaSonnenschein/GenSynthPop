@@ -1,7 +1,7 @@
 Package: GenSynthPop
 Type: Package
 Title: Functions For Generating a Representative Synthetic Agent Population Based On Marginal And Conditional Distributions
-Version: 2.0.0
+Version: 2.1.0
 Authors@R: 
     person("Tabea", "Sonnenschein", , "t.s.sonnenschein@uu.nl", role = c("aut", "cre"),
            comment = c(ORCID = "0000-0001-6592-9548"))
@@ -15,9 +15,10 @@ Description: This package contains a set of functions that help prepare stratifi
 License: MIT + file LICENSE
 Encoding: UTF-8
 LazyData: true
-RoxygenNote: 7.2.3
+RoxygenNote: 7.3.3
 Roxygen: list(markdown = TRUE)
 Imports: 
+    utils,
     dplyr,
     mipfp,
     stats,

@@ -11,7 +11,8 @@ ipf_fit_contingency_table(
   margins = NULL,
   margins_names = NULL,
   marginorder = NULL,
-  uncoveredcontingency = NULL
+  uncoveredcontingency = NULL,
+  suppressed_margin_value = 0
 )
 }
 \arguments{
@@ -32,6 +33,13 @@ The order of each margin will be used when transforming the contingency table to
 
 \item{uncoveredcontingency}{A list of column names for variables in the contingency table that do not have
 associated marginal distributions. These will be incorporated into the multi-dimensional array for IPF but are not constrained by margins.}
+
+\item{suppressed_margin_value}{Value to use for a margin category that is NA for this group while other
+categories of the same margin are present, as happens when a statistical office withholds small cells.
+Defaults to 0, treating a withheld category as absent, which suits disclosure rules that withhold a cell
+because it is below a threshold. Set it to a figure of your own (for example half of a known threshold)
+to reserve some population for the withheld category instead. Groups whose margin is entirely NA are
+unaffected and continue to fall back to the contingency table.}
 }
 \value{
 A data frame of the fitted contingency table, where the counts have been adjusted to match the provided margins.
