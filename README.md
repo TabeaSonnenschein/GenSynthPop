@@ -5,11 +5,12 @@ This repository contains the implementation of GenSynthPop, a sample-free tool t
 This package contains a set of functions that help prepare stratified census datasets to generate conditional propensities, combines the conditional propensities with spatial marginal distributions to generate a representative population and validates that the produced agents have a similar distribution as the initial spatial marginal datasets and the stratified datasets. The generated population is  representative for a city or the spatial extent that is fed into the algorithms and can be used for simulation purposes, such as an agent-based model. The smaller the spatial units of the spatial marginal distributions, the more spatially resolved the agents will be too.
 
 ## Updates
+
 Changes in Version 2.1.0 compared to Version 2.0.0
-* checks the contingency table and margins for alignment before fitting and warns when they describe different populations or categories
-* leaves agents that the contingency table has no distribution for as `NA` (and reports them) instead of inventing a value
-* new argument `suppressed_margin_value` to handle margin categories withheld by a statistical office (partial NAs)
-* validates the result with the total variation distance, both against the contingency table (within each group of conditional attributes) and against each margin (within each spatial unit)
+* **Handles incomplete and partial census data.** A margin cell withheld by the statistical office (`NA`) no longer stops the run. It counts as 0 by default, or as a value you set with the new `suppressed_margin_value` argument. A spatial unit with no data for a margin falls back to the contingency table. Margins may also include categories the contingency table doesn't cover, such as education tabulated for ages 15+ against age margins that include children. Agents outside the table's coverage are left `NA` and reported, so you can assign them yourself.
+* **Data problems are reported before fitting.** The contingency table and margins are compared up front for missing counts, different population totals, different category composition and unmatched categories, with one warning explaining the likely cause. Spatial units where IPF does not converge are collected into a single summary warning instead of one warning per unit.
+* **More meaningful verification.** The chi-square test now checks goodness of fit against the expected distribution; previously it tested independence and warned when the fit was good. The p-value is still printed but no longer triggers a warning, because at synthetic-population sizes it flags trivial deviations. The main measure is now the total variation distance, the share of agents that would need reassigning. It is calculated within each group of conditioning attributes, so differences in group size don't count as fitting error, and it warns above 5%. The result is also checked against each margin within every spatial unit.
+* **Much faster on large populations.** Agents are now indexed by group once, instead of the whole population being scanned for every group and sub-group, which dominated the runtime of large runs.
 
 Changes in Version 2.0.0 of the package GenSynthPop compared to Version 1.0.0
 * implements iterative proportionate fitting to fit multi-variable joint distributions to spatial marginal distributions. 
