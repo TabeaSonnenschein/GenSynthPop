@@ -144,6 +144,8 @@ assign_households <- function(df, structure, group_by, agent_id = "agent_id",
     gap_values <- if (!is.null(child_spec$gap) && child_spec$gap$column %in% colnames(df)) {
         suppressWarnings(as.numeric(df[[child_spec$gap$column]]))
     } else rep(NA_real_, n)
+    child_floor <- if (!is.null(child_spec$gap) && !is.null(child_spec$gap$floor))
+        child_spec$gap$floor else 0
     report <- list(relaxed = list(), unmatched = list(), floor_hits = 0L, floor_blocked = 0L,
                    notes = character(0), childless_cores = 0L, unplaced_children = 0L)
 
@@ -196,7 +198,16 @@ assign_households <- function(df, structure, group_by, agent_id = "agent_id",
                     household = ids, type = structure$type_of[[r]], area = area_pick,
                     ref = choose_reference(df, ma, mb, parent_reference,
                                            value_column = child_spec$gap$column),
-                    bound = pmin(gap_values[ma], gap_values[mb]),
+                    # The floor binds the partner the distribution was published for, and
+                    # the other partner only to not being younger than the children. A
+                    # second partner much younger than the first is a step-parent, which is
+                    # ordinary; one younger than the children is not. Adding the floor back
+                    # to the other partner's value is what encodes the weaker bound, since
+                    # the matching subtracts the floor from whatever it is given.
+                    bound = pmin(
+                        gap_values[choose_reference(df, ma, mb, parent_reference,
+                                                    value_column = child_spec$gap$column)],
+                        pmin(gap_values[ma], gap_values[mb]) + child_floor),
                     stringsAsFactors = FALSE))
                 if (li > 1) {
                     report$relaxed[[paste0(r, " at ", rungs[[li]]$label)]] <- 2L * length(ma)
