@@ -1,4 +1,3 @@
-library(dplyr)
 
 # Compare the datasets the attribute is built from before fitting anything, so that a
 # mismatch between them is reported as a data problem rather than surfacing later as an

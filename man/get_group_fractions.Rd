@@ -42,7 +42,7 @@ If \code{margins_names} are provided, the function combines them with the \code{
 margin groups to ensure the returned fractions are indexed by all relevant attributes.
 }
 \examples{
-# Example: Calculate fractions for target attribute 'age_group' 
+# Example: Calculate fractions for target attribute 'age_group'
 # across 'sex' and 'migrationbackground' groups
 df_contingency <- data.frame(
   sex = c("male", "female", "male", "female"),
@@ -51,7 +51,7 @@ df_contingency <- data.frame(
   count = c(30, 25, 50, 45)
 )
 
-fractions <- get_group_fractions(df_contingency, group_by = c("sex", "migrationbackground"), 
+fractions <- get_group_fractions(df_contingency, group_by = c("sex", "migrationbackground"),
                                  target_attribute = "age_group")
 # Returns a data frame of fractions based on 'age_group', 'sex', and 'migrationbackground'
 

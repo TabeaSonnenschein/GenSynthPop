@@ -10,7 +10,8 @@ Conditional_attribute_adder(
   target_attribute,
   group_by = NULL,
   margins = NULL,
-  margins_names = NULL
+  margins_names = NULL,
+  suppressed_margin_value = 0
 )
 }
 \arguments{
@@ -32,6 +33,14 @@ only the contingency table is used.}
 
 \item{margins_names}{An optional list of vectors containing the names of the margin columns, corresponding
 to the data frames in \code{margins}. Each vector should list the margin names for the respective data frame.}
+
+\item{suppressed_margin_value}{Value to use for a margin category that is NA for a group while other
+categories of the same margin are present, as happens when a statistical office withholds small cells.
+Defaults to 0, treating a withheld category as absent. That suits disclosure rules that withhold a cell
+\emph{because} it sits below a threshold, which makes the withheld value small but unknown rather than average -
+CBS neighbourhood education counts, for instance, are never published below 50. Set it to a figure of your
+own, such as half of a threshold you know applies, to reserve some population for the withheld category.
+Groups whose margin for a variable is entirely NA are unaffected: they still fall back to the contingency table.}
 }
 \value{
 A data frame representing the synthetic population, now with the target attribute added.

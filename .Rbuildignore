@@ -1,2 +1,5 @@
 ^GenSynthPop\.Rproj$
 ^\.Rproj\.user$
+^LICENSE\.md$
+^example$
+^server_user_id\.txt$

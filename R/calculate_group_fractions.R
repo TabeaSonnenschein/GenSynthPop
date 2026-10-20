@@ -1,4 +1,3 @@
-library(dplyr)
 
 
 #' Calculate Fractions from a Contingency Table

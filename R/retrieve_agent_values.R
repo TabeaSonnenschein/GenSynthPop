@@ -1,5 +1,3 @@
-# Required packages
-library(dplyr)
 
 #' Calculate Adjusted Group Counts Based on Fractions
 #'

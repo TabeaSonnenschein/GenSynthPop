@@ -54,8 +54,8 @@ df_contingency <- data.frame(
   count = c(30, 20, 50, 40)
 )
 
-fractions <- calculate_fractions(df_contingency, 
-                                  group_by = c("age_group"), 
+fractions <- calculate_fractions(df_contingency,
+                                  group_by = c("age_group"),
                                   target_attribute = "sex")
 # Returns the data frame with an added 'fraction' column
 

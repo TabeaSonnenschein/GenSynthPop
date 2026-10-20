@@ -1,5 +1,3 @@
-library(dplyr)
-library(stats)
 
 #' Generate a contingency table from a synthetic population dataset
 #'

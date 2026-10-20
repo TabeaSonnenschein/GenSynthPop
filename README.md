@@ -5,6 +5,12 @@ This repository contains the implementation of GenSynthPop, a sample-free tool t
 This package contains a set of functions that help prepare stratified census datasets to generate conditional propensities, combines the conditional propensities with spatial marginal distributions to generate a representative population and validates that the produced agents have a similar distribution as the initial spatial marginal datasets and the stratified datasets. The generated population is  representative for a city or the spatial extent that is fed into the algorithms and can be used for simulation purposes, such as an agent-based model. The smaller the spatial units of the spatial marginal distributions, the more spatially resolved the agents will be too.
 
 ## Updates
+Changes in Version 2.1.0 compared to Version 2.0.0
+* checks the contingency table and margins for alignment before fitting and warns when they describe different populations or categories
+* leaves agents that the contingency table has no distribution for as `NA` (and reports them) instead of inventing a value
+* new argument `suppressed_margin_value` to handle margin categories withheld by a statistical office (partial NAs)
+* validates the result with the total variation distance, both against the contingency table (within each group of conditional attributes) and against each margin (within each spatial unit)
+
 Changes in Version 2.0.0 of the package GenSynthPop compared to Version 1.0.0
 * implements iterative proportionate fitting to fit multi-variable joint distributions to spatial marginal distributions. 
 * implements deterministic assignment, instead of probability distribution sampling
@@ -46,8 +52,12 @@ Should there be remaining questions, shoot me an email: t.s.sonnenschein@uu.nl
 2. generate a population by generating unique agents for each person living in each neighborhood
 
 ```r
-# Load the library
+# Load the library (tidyr and dplyr are used for reshaping the input data)
 library(GenSynthPop)
+library(tidyr)
+library(dplyr)
+
+# the example data is in the example folder of this repository
 neigh_df = read.csv("Neighborhood_statistics.csv")
 
 # Initialize the agent_df
@@ -67,7 +77,7 @@ agent_df = data.frame(agent_id = unlist(agent_ids),
 3. use this new agent_df and the neighborhood marginal distribution dataframe to distribute the agents across neighborhoods and age groups. 
 
 ```r
-agecols = c("0-15", "15-25", "25-45", "45-65", "65+")
+agecols = c("age0_15", "age15_25", "age25_45", "age45_65", "age65plus")
 ageneigh_df = neigh_df[unlist(c("neighb_code", agecols))] %>%
   pivot_longer(cols = all_of(agecols), 
                names_to = "age_group", 
@@ -84,7 +94,7 @@ print(head(agent_df))
 
 ```
 
-4. Read the stratified dataframe with the conditional variable and the variable of interest (that you want to add), for example sex by agegroup, since we already added that one. Make sure that the classes of the conditional variables correspond to the ones in the agent_df. We can now use additional neighborhood margins that we have. The statement "variable does not statistically match the original distribution" can be ignored and only is the case because distributions have been adjusted to the local neighborhood margins and therefore do not equal the unadjusted distributions.
+4. Read the stratified dataframe with the conditional variable and the variable of interest (that you want to add), for example sex by agegroup, since we already added that one. Make sure that the classes of the conditional variables correspond to the ones in the agent_df. We can now use additional neighborhood margins that we have. After each step the function verifies the result and prints the total variation distance (the share of agents that would have to be reassigned) against the contingency table and against each margin. A few percent of divergence from the contingency table is expected, because the distributions have been adjusted to the local neighborhood margins and therefore do not equal the unadjusted distributions; the function only warns when it exceeds 5%. The margins are a hard constraint, so their distance should stay close to 0.
 
 ```r
 sex_age_df = read.csv("sex_age_statistics.csv") # columns age_group, sex, counts
@@ -138,6 +148,8 @@ print(head(agent_df))
 
 ```
 
+Above, neighborhoods with any missing education count are dropped from the margin, so they fall back to the contingency table. Alternatively, keep them: a neighborhood whose margin is entirely `NA` falls back to the contingency table automatically, and a category that is `NA` while other categories of the same margin are present (a cell withheld by the statistical office) is treated as `suppressed_margin_value`, which defaults to 0. See `?Conditional_attribute_adder`.
+
 #### Contingency tables that cover only part of the population
 
 Education level is only tabulated from age 15 onwards, so `edu_sex_age_statistics.csv`
@@ -160,7 +172,7 @@ the margin has categories the contingency table has no cell for, which is exactl
 happening here and is expected.
 
 
-### you can look at the examplescript.R script in the example folder for an application of the functions in the package and example data to run it.
+### you can look at the examplescript.r script in the example folder for an application of the functions in the package and example data to run it.
 
 ## License
 This package is licensed under the MIT License.
